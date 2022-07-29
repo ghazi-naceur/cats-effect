@@ -1,6 +1,7 @@
 package chp2.effects
 
 import scala.concurrent.Future
+import scala.io.StdIn
 
 // 1
 object Effects {
@@ -74,7 +75,85 @@ object Effects {
     12
   })
 
+  /** Exercises:
+    *
+    * 1- An IO which returns the current time of the system: (unsafeRun: () => Time)
+    * 2- An IO which measures the duration of a computation (duration of unsafeRun) (hint: use ex1)
+    * 3- An IO which prints something to the console
+    * 4- An IO which reads a line (a string) from the std input
+    */
+
+  // 1
+  val clock: MyIO[Long] = MyIO(() => System.currentTimeMillis())
+
+  // 2
+  def measure[A](computation: MyIO[A]): MyIO[Long] = for {
+    start <- clock
+    _ <- computation
+    end <- clock
+  } yield end - start
+  /*
+  The implementation above is equivalent to:
+    clock.flatMap(start => computation.flatMap(_ => clock.map(end => (end - start))))
+
+
+    clock.map(end => (end - start))
+    =========> MyIO(() => System.currentTimeMillis() - start)
+
+    clock.flatMap(start => computation.flatMap(_ => MyIO(() => System.currentTimeMillis() - start)))
+    =========> MyIO(() => System.currentTimeMillis() - start)
+
+    computation.flatMap(lambda)
+    =========> MyIO(() => lambda(computation.unsafeRun()).unsafeRun())
+    =========> MyIO(() => lambda(___COMPUTATION___).unsafeRun())
+    =========> MyIO(() => MyIO(() => System.currentTimeMillis() - start)).unsafeRun()
+    =========> MyIO(() => System.currentTimeMillis_after_computation() - start)
+
+    clock.flatMap(start => MyIO(() => System.currentTimeMillis_after_computation() - start))
+    =========> MyIO(() => lambda(clock.unsafeRun()).unsafeRun()); with lambda = "start => MyIO(() => System.currentTimeMillis_after_computation() - start)"
+    =========> MyIO(() => lambda(System.currentTimeMillis()).unsafeRun())
+    =========> MyIO(() => MyIO(() => System.currentTimeMillis_after_computation() - System.currentTimeMillis()).unsafeRun())
+    =========> MyIO(() => System.currentTimeMillis_after_computation() - System.currentTimeMillis())
+   */
+
+  def testTimeIO(): Unit = {
+    val test = measure(MyIO(() => Thread.sleep(1000)))
+    println(test.unsafeRun())
+  }
+
+  // 3
+  def putStrLn(line: String): MyIO[Unit] = MyIO(() => println(line))
+
+  // 4
+  val read: MyIO[String] = MyIO(() => StdIn.readLine())
+
+  def testConsole(): Unit = {
+    val program: MyIO[Unit] = for {
+      line1 <- read
+      line2 <- read
+      _ <- putStrLn(line1 + line2)
+    } yield ()
+
+    program.unsafeRun()
+  }
+  /*
+    In normal/imperative programming, we do:
+      line1 = read from console
+      line2 = read from console
+      println(line1 + line2)
+
+    => Rather than writing imperative code, we're describing an imperative program (using 'testConsole') through
+      MyIO data structure transformations with pure functional programming.
+   */
+
   def main(args: Array[String]): Unit = {
-    anIO.unsafeRun()
+    anIO // nothing will be printed here
+    anIO.unsafeRun() // println will be printed
+
+    val aIO = MyIO(() => 1 to 10000)
+    println(measure(aIO).unsafeRun())
+    testTimeIO()
+
+    testConsole()
   }
 }

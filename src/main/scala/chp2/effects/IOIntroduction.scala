@@ -10,6 +10,33 @@ object IOIntroduction {
 
   // IO embodies any computation that can perform side-effect.
   // IO is like a description of some computation
+  // IO is a bridge between :
+  //  - pure functional programming & referential transparency
+  //  - impure FP/imperative programming & side effects
+  // Effect properties:
+  //  - it describes what kind of computation will be performed
+  //  - the type signature describes the value that will be calculated
+  //  - it separates effect description from effect execution (when externally visible effects are produced)
+
+  // Cats Effect IO:
+  // The ultimate effect type:
+  //  - any computation that might perform side effects
+  //  - produces a value of type A if it's successful
+  //  - the effect construction is separate from the effect execution
+
+  // Expressions and methods returning IOs are called effectful
+  // IO is a monad
+  // IO compositions read like an imperative program + pure FP is preserved
+
+  // IO handles errors and can be transformed to also hold failures to process later (.attempt)
+
+  // IO parallelism:
+  //  - effects are evaluated on different threads
+  //  - synchronization and coordination are automatic
+
+  // IO traversal:
+  //  - useful when we want to 'unwrap' double-nested containers
+  //  - can be done in parallel
 
   val ourFirstIO: IO[Int] = IO.pure(12) // pure contains an arg that should not have side effect
   val aDelayedIO: IO[Int] = IO.delay({

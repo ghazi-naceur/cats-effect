@@ -4,6 +4,7 @@ import cats.Parallel
 import cats.effect.IO.Par
 import cats.effect.{IO, IOApp}
 
+// 5
 object IOParallelism extends IOApp.Simple {
 
   // IOs are usually sequential

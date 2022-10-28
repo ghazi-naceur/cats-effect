@@ -11,6 +11,32 @@ import scala.language.postfixOps
 // 1
 object Fibers extends IOApp.Simple {
 
+  // Fiber = description of an effect being executed on some other thread
+  // Creating a Fiber is an effectful operation: The Fiber will wrapped in an IO
+  // Managing a Fiber is an effectful operation: The Fiber will wrapped in anther IO
+  // Fiber is a passive data structure, not like the JVM thread, which is an active entity
+  // Cats Effect has a thread pool that manages the execution of effects.
+  // Tens of millions of fibers can be created per 1 GB of heap
+  // Cats Effect schedules fibers for execution
+
+  /*
+  Why we need fibers :
+    - no more need for threads and locks
+    - delegate thread management to Cats Effect
+    - avoid asynchronous code with callbacks
+    - maintain pure functional programming
+    - keep low-level primitives (blocking, waiting, joining, interrupting, cancelling)
+
+  Fiber scheduling concepts & implementation details:
+    - blocking effects in a fiber lead to descheduling
+    - semantic blocking: Cats Effect feature; a blocked Fiber doesn't mean that the JVM thread is blocked: no resources are wasted
+    - cooperative scheduling: Once a fiber gets descheduled, the JVM thread will take another fiber to process
+    - the same fiber can run on multiple JVM threads
+    - work-stealing thread pool: For better performance, a free thread can detect if another thread is having too much work, so it can
+      some of its work, so this will contribute to a balanced workload between threads
+   */
+
+
   val number: IO[Int] = IO.pure(12)
   val string: IO[String] = IO.pure("simple")
 

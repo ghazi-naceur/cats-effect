@@ -1,10 +1,12 @@
 package chp3.concurrency
 
 import cats.effect.kernel.Outcome
+import cats.effect.kernel.Outcome.{Canceled, Errored, Succeeded}
 import cats.effect.{Fiber, IO, IOApp}
 import utils.DebugWrapper
 
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.language.postfixOps
 
 // 1
 object Fibers extends IOApp.Simple {
@@ -68,6 +70,92 @@ object Fibers extends IOApp.Simple {
     } yield result
   }
 
+  /** Exercises:
+    *  1. Write a function that runs an IO on another thread, and, depending on the result of the fiber
+    *    - return the result in an IO
+    *    - if errored or cancelled, return a failed IO
+    *
+    * 2. Write a function that takes two IOs, runs them on different fibers and returns an IO with a tuple containing both results.
+    *    - if both IOs complete successfully, tuple their results
+    *    - if the first IO returns an error, raise that error (ignoring the second IO's result/error)
+    *    - if the first IO doesn't error but second IO returns an error, raise that error
+    *    - if one (or both) canceled, raise a RuntimeException
+    *
+    * 3. Write a function that adds a timeout to an IO:
+    *    - IO runs on a fiber
+    *    - if the timeout duration passes, then the fiber is canceled
+    *    - the method returns an IO[A] which contains
+    *      - the original value if the computation is successful before the timeout signal
+    *      - the exception if the computation is failed before the timeout signal
+    *      - a RuntimeException if it times out (i.e. cancelled by the timeout)
+    */
+  //1
+  def processResultsFromFiber[A](io: IO[A]): IO[A] = {
+    val ioResult = for {
+      fiber <- io.debug.start
+      result <- fiber.join
+    } yield result
+
+    ioResult.flatMap {
+      case Succeeded(fa) => fa
+      case Errored(e)    => IO.raiseError(e)
+      case Canceled()    => IO.raiseError(new RuntimeException("Computation cancelled"))
+    }
+  }
+
+  def testEx1: IO[Unit] = {
+    val aComputation = IO("starting").debug >> IO.sleep(1 second) >> IO("done!").debug >> IO(12)
+    processResultsFromFiber(aComputation).void
+  }
+
+  // 2
+  def tupleIOs[A, B](ioa: IO[A], iob: IO[B]): IO[(A, B)] = {
+    val result = for {
+      fibA <- ioa.start
+      fibB <- iob.start
+      resultA <- fibA.join
+      resultB <- fibB.join
+    } yield (resultA, resultB)
+
+    result.flatMap {
+      case (Succeeded(fa), Succeeded(fb)) =>
+        for {
+          a <- fa
+          b <- fb
+        } yield (a, b)
+      case (Errored(e), _) => IO.raiseError(e)
+      case (_, Errored(e)) => IO.raiseError(e)
+      case _               => IO.raiseError(new RuntimeException("Computation cancelled"))
+    }
+  }
+
+  def testEx2: IO[Unit] = {
+    val firstIO = IO.sleep(2 seconds) >> IO(1).debug
+    val secondIO = IO.sleep(3 seconds) >> IO(2).debug
+    tupleIOs(firstIO, secondIO).debug.void
+  }
+
+  // 3
+  def timeout[A](io: IO[A], duration: FiniteDuration): IO[A] = {
+    val computation = for {
+      fib <- io.start
+      _ <- IO.sleep(duration) >> fib.cancel
+//      _ <- (IO.sleep(duration) >> fib.cancel).start // Be careful: Fibers can leak
+      result <- fib.join
+    } yield result
+
+    computation.flatMap {
+      case Succeeded(fa) => fa
+      case Errored(e)    => IO.raiseError(e)
+      case Canceled()    => IO.raiseError(new RuntimeException("Computation cancelled"))
+    }
+  }
+
+  def testEx3: IO[Unit] = {
+    val aComputation = IO("starting").debug >> IO.sleep(1 second) >> IO("done!").debug >> IO(12)
+    timeout(aComputation, 5 millis).debug.void
+  }
+
   override def run: IO[Unit] = {
 //    sameThreadIOs()
 //    differentThreadIOs()
@@ -77,8 +165,11 @@ object Fibers extends IOApp.Simple {
 //    throwOnAnotherThread() // IO(Errored(java.lang.RuntimeException: No number))
 //      .debug.void
 
-    testCancel() // Canceled() // Cancel was called half-way the waiting time, so "done" won't be printed
-      .debug.void
+//    testCancel() // Canceled() // Cancel was called half-way the waiting time, so "done" won't be printed
+//      .debug.void
 
+//    testEx1
+//    testEx2
+    testEx3
   }
 }

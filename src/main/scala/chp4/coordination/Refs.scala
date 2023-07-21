@@ -1,7 +1,11 @@
 package chp4.coordination
 
 import cats.effect.{IO, IOApp, Ref}
+import cats.implicits.catsSyntaxTuple2Parallel
 import utils.DebugWrapper
+
+import scala.concurrent.duration.DurationInt
+import scala.language.postfixOps
 
 // 1
 object Refs extends IOApp.Simple {
@@ -98,10 +102,90 @@ object Refs extends IOApp.Simple {
     } yield ()
   }
 
+  /** Exercise:
+    * Rewrite the following code using FP and Ref
+    */
+  def tickingClockImpure(): IO[Unit] = {
+    var ticks: Long = 0L
+    def tickingClock: IO[Unit] = for {
+      _ <- IO.sleep(1 second)
+      _ <- IO(System.currentTimeMillis()).debug
+      _ <- IO(ticks += 1) // this is not thread-safe, because here we're updating a var
+      _ <- tickingClock
+    } yield ()
+
+    def printTicks: IO[Unit] = for {
+      _ <- IO.sleep(5 seconds)
+      _ <- IO(s"Ticks: $ticks").debug
+      _ <- printTicks
+    } yield ()
+
+//    => A thread is reading and another one is writing at the same time, so this can lead to a race condition
+
+    for {
+      _ <- (tickingClock, printTicks).parTupled
+    } yield ()
+  }
+
+  def tickingClockPure(): IO[Unit] = {
+    def tickingClock(ticks: Ref[IO, Int]): IO[Unit] = for {
+      _ <- IO.sleep(1 second)
+      _ <- IO(System.currentTimeMillis()).debug
+      _ <- ticks.update(_ + 1) // thread-safe effect
+      _ <- tickingClock(ticks)
+    } yield ()
+
+    def printTicks(ticks: Ref[IO, Int]): IO[Unit] = for {
+      _ <- IO.sleep(5 seconds)
+      t <- ticks.get
+      _ <- IO(s"Ticks: $t").debug
+      _ <- printTicks(ticks)
+    } yield ()
+
+    for {
+      tickRef <- Ref[IO].of(0)
+      _ <- (tickingClock(tickRef), printTicks(tickRef)).parTupled
+    } yield ()
+  }
+
+  def tickingClockWeird(): IO[Unit] = {
+    val ticks = Ref[IO].of(0)
+// This 'Ref[IO].of(0)' is an IO that gives a reference when this effect is evaluated. It will be evaluated when
+// 'tickingClock' and 'printTicks' are evaluated. So when you say 't <- ticks' in the for-comprehension (tickingClock),
+// it will give you a new reference, and the same happen when the other for-comprehension (printTicks).
+//    => 't <- ticks' will give a new reference when this IO is evaluated, so we're counting ticks on new Ref instances
+//     everytime, that's why we see 'Ticks: 0' in the logs all the time
+//    => Use with your methods the exact same reference to Ref, not the reference to an IO that gives a reference,
+//    because you put that in a for-comprehension that will give you a new instance of Ref every single time
+    def tickingClock: IO[Unit] = for {
+      t <- ticks
+      _ <- IO.sleep(1 second)
+      _ <- IO(System.currentTimeMillis()).debug
+      _ <- t.update(_ + 1) // thread-safe effect
+      _ <- tickingClock
+    } yield ()
+
+    def printTicks: IO[Unit] = for {
+      t <- ticks
+      _ <- IO.sleep(5 seconds)
+      currentTicks <- t.get
+      _ <- IO(s"Ticks: $currentTicks").debug
+      _ <- printTicks
+    } yield ()
+
+    for {
+      _ <- (tickingClock, printTicks).parTupled
+    } yield ()
+  }
+
   override def run: IO[Unit] = {
 //    demoConcurrentWorkImpure()
     // => This example is not thread-safe, so it won't give an correct result
 
-    demoConcurrentWorkPure()
+//    demoConcurrentWorkPure()
+
+//    tickingClockImpure()
+//    tickingClockPure()
+    tickingClockWeird()
   }
 }
